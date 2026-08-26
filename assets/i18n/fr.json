@@ -1,0 +1,23 @@
+{
+  "sign_in.title": "Se connecter",
+  "sign_in.email_label": "E-mail",
+  "sign_in.password_label": "Mot de passe",
+  "sign_in.submit": "Se connecter",
+  "sign_in.continue_with": "Continuer avec {provider}",
+  "sign_in.magic_link_sent": "Nous vous avons envoyé un lien magique.",
+  "sign_in.otp_sent": "Nous vous avons envoyé un code à usage unique.",
+  "sign_in.otp_label": "Code",
+  "mfa.totp.title": "Vérifier",
+  "mfa.totp.label": "Code d'authentification",
+  "mfa.totp.hint": "Saisissez le code à 6 chiffres depuis votre application d'authentification.",
+  "mfa.unavailable.title": "Authentification multifacteur indisponible",
+  "mfa.unavailable.message": "Connectez-vous via votre flux sans mot de passe enregistré.",
+  "user_avatar.signed_in_as": "Connecté en tant que {email}",
+  "user_avatar.session_expires": "La session expire {time}",
+  "user_avatar.sign_out": "Se déconnecter",
+  "biometric.prompt": "Déverrouiller",
+  "errors.network": "Erreur réseau. Veuillez réessayer.",
+  "errors.invalid_credentials": "E-mail ou mot de passe invalide.",
+  "errors.rate_limited": "Trop de tentatives. Réessayez plus tard.",
+  "errors.unknown": "Une erreur s'est produite."
+}

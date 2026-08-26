@@ -1,0 +1,23 @@
+{
+  "sign_in.title": "Anmelden",
+  "sign_in.email_label": "E-Mail",
+  "sign_in.password_label": "Passwort",
+  "sign_in.submit": "Anmelden",
+  "sign_in.continue_with": "Weiter mit {provider}",
+  "sign_in.magic_link_sent": "Wir haben Ihnen einen Magic Link gesendet.",
+  "sign_in.otp_sent": "Wir haben Ihnen einen Einmal-Code gesendet.",
+  "sign_in.otp_label": "Code",
+  "mfa.totp.title": "Verifizieren",
+  "mfa.totp.label": "Authentifizierungscode",
+  "mfa.totp.hint": "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.",
+  "mfa.unavailable.title": "Mehrfaktor-Authentifizierung nicht verfügbar",
+  "mfa.unavailable.message": "Melden Sie sich über Ihren registrierten passwortlosen Flow an.",
+  "user_avatar.signed_in_as": "Angemeldet als {email}",
+  "user_avatar.session_expires": "Sitzung läuft ab {time}",
+  "user_avatar.sign_out": "Abmelden",
+  "biometric.prompt": "Entsperren",
+  "errors.network": "Netzwerkfehler. Bitte erneut versuchen.",
+  "errors.invalid_credentials": "Ungültige E-Mail oder Passwort.",
+  "errors.rate_limited": "Zu viele Versuche. Bitte später erneut versuchen.",
+  "errors.unknown": "Etwas ist schiefgelaufen."
+}

@@ -1,0 +1,23 @@
+{
+  "sign_in.title": "Iniciar sesión",
+  "sign_in.email_label": "Correo electrónico",
+  "sign_in.password_label": "Contraseña",
+  "sign_in.submit": "Iniciar sesión",
+  "sign_in.continue_with": "Continuar con {provider}",
+  "sign_in.magic_link_sent": "Te hemos enviado un enlace mágico.",
+  "sign_in.otp_sent": "Te hemos enviado un código de un solo uso.",
+  "sign_in.otp_label": "Código",
+  "mfa.totp.title": "Verificar",
+  "mfa.totp.label": "Código de autenticación",
+  "mfa.totp.hint": "Introduce el código de 6 dígitos de tu aplicación de autenticación.",
+  "mfa.unavailable.title": "Autenticación multifactor no disponible",
+  "mfa.unavailable.message": "Inicia sesión mediante tu flujo sin contraseña registrado.",
+  "user_avatar.signed_in_as": "Conectado como {email}",
+  "user_avatar.session_expires": "La sesión caduca {time}",
+  "user_avatar.sign_out": "Cerrar sesión",
+  "biometric.prompt": "Desbloquear",
+  "errors.network": "Error de red. Inténtalo de nuevo.",
+  "errors.invalid_credentials": "Correo o contraseña no válidos.",
+  "errors.rate_limited": "Demasiados intentos. Inténtalo más tarde.",
+  "errors.unknown": "Algo ha ido mal."
+}

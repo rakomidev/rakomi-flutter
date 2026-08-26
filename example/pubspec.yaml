@@ -1,0 +1,20 @@
+name: rakomi_flutter_example
+description: Demo app for the rakomi_flutter SDK.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.11.0 <4.0.0'
+  flutter: '>=3.41.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  rakomi_flutter:
+    path: ..
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

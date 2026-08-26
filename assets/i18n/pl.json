@@ -1,0 +1,23 @@
+{
+  "sign_in.title": "Zaloguj się",
+  "sign_in.email_label": "Email",
+  "sign_in.password_label": "Hasło",
+  "sign_in.submit": "Zaloguj się",
+  "sign_in.continue_with": "Kontynuuj z {provider}",
+  "sign_in.magic_link_sent": "Wysłaliśmy Ci magiczny link.",
+  "sign_in.otp_sent": "Wysłaliśmy Ci jednorazowy kod.",
+  "sign_in.otp_label": "Kod",
+  "mfa.totp.title": "Weryfikacja",
+  "mfa.totp.label": "Kod uwierzytelniający",
+  "mfa.totp.hint": "Wprowadź 6-cyfrowy kod z aplikacji uwierzytelniającej.",
+  "mfa.unavailable.title": "Uwierzytelnianie wieloskładnikowe niedostępne",
+  "mfa.unavailable.message": "Zaloguj się przez zarejestrowany przepływ passwordless.",
+  "user_avatar.signed_in_as": "Zalogowano jako {email}",
+  "user_avatar.session_expires": "Sesja wygasa {time}",
+  "user_avatar.sign_out": "Wyloguj",
+  "biometric.prompt": "Odblokuj",
+  "errors.network": "Błąd sieci. Spróbuj ponownie.",
+  "errors.invalid_credentials": "Nieprawidłowy email lub hasło.",
+  "errors.rate_limited": "Za dużo prób. Spróbuj ponownie później.",
+  "errors.unknown": "Coś poszło nie tak."
+}

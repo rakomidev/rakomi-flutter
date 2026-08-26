@@ -1,0 +1,65 @@
+name: rakomi_flutter
+description: >-
+  Rakomi Flutter SDK — RFC 8252-compliant OAuth/PKCE authentication for Flutter
+  apps targeting iOS, Android and Flutter Web. Platform-native secure storage,
+  biometric unlock, MFA (TOTP), offline-tolerant JWKS verification.
+version: 0.1.0
+# API VERSION TARGETED: /v1. This SDK is versioned independently of the Rakomi API and independently
+# of every other Rakomi SDK, pinned to the API surface it was built and tested against — a
+# documentation/release-process discipline, not a runtime negotiation mechanism. State the targeted
+# API version in the CHANGELOG entry for every release.
+homepage: https://rakomi.com
+# The Flutter SDK is published from its own public repository
+# `rakomidev/rakomi-flutter`. Do NOT point this at the development monorepo:
+# that link 404s publicly, and a 404 on a named repository is itself a
+# disclosure.
+repository: https://github.com/rakomidev/rakomi-flutter
+issue_tracker: https://github.com/rakomidev/rakomi-flutter/issues
+documentation: https://docs.rakomi.dev/sdks/flutter
+
+# ⛔ `false_secrets:` IS BANNED IN THIS FILE — do not add it, in any form.
+# It is the documented way to silence `dart pub publish`'s private-key
+# detector, and pub prints those instructions inside the very error the
+# detector raises. Silencing the detector publishes the secret permanently.
+# The correct boundary is `.pubignore`; if the detector fires, remove the
+# material from the publish set (or from the repo), never the detection.
+
+topics:
+  - auth
+  - oauth
+  - authentication
+  - jwt
+  - sdk
+
+screenshots: []
+
+environment:
+  sdk: '>=3.11.0 <4.0.0'
+  flutter: '>=3.41.0'
+
+dependencies:
+  app_links: ^7.0.0
+  connectivity_plus: ^7.1.1
+  crypto: ^3.0.7
+  dart_jsonwebtoken: ^3.4.1
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^10.0.0
+  flutter_web_auth_2: ^5.0.2
+  http: ^1.6.0
+  http_parser: ^4.1.2
+  local_auth: ^3.0.1
+  meta: ^1.16.0
+  pointycastle: ^4.0.0
+  shared_preferences: ^2.5.5
+
+dev_dependencies:
+  fake_async: ^1.3.3
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+
+flutter:
+  assets:
+    - assets/i18n/

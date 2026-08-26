@@ -1,0 +1,23 @@
+{
+  "sign_in.title": "Sign in",
+  "sign_in.email_label": "Email",
+  "sign_in.password_label": "Password",
+  "sign_in.submit": "Sign in",
+  "sign_in.continue_with": "Continue with {provider}",
+  "sign_in.magic_link_sent": "We sent you a magic link.",
+  "sign_in.otp_sent": "We sent you a one-time code.",
+  "sign_in.otp_label": "Code",
+  "mfa.totp.title": "Verify",
+  "mfa.totp.label": "Authentication code",
+  "mfa.totp.hint": "Enter the 6-digit code from your authenticator app.",
+  "mfa.unavailable.title": "Multi-factor not available",
+  "mfa.unavailable.message": "Sign in via your registered passwordless flow.",
+  "user_avatar.signed_in_as": "Signed in as {email}",
+  "user_avatar.session_expires": "Session expires {time}",
+  "user_avatar.sign_out": "Sign out",
+  "biometric.prompt": "Unlock",
+  "errors.network": "Network error. Please try again.",
+  "errors.invalid_credentials": "Invalid email or password.",
+  "errors.rate_limited": "Too many attempts. Try again later.",
+  "errors.unknown": "Something went wrong."
+}
