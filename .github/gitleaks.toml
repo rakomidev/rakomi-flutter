@@ -1,0 +1,11 @@
+# Secret scan of a release tag commit (publish.yml). The default gitleaks rules apply in full; the
+# exception below is a test literal, limited to one rule and one exact value.
+title = "rakomi-flutter release scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Placeholder publishable key of the wire-contract tests"
+targetRules = ["generic-api-key"]
+regexes = ['''^pk_test_abc123$''']
