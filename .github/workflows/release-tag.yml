@@ -1,0 +1,244 @@
+name: Release tag (after a verified release pull request)
+
+# Runs on every push to main and acts only on the merge commit of a release pull request: a `release/...`
+# branch of this repository, opened by an allow-listed release App, merged with a merge commit. It proves
+# that the merged source equals the source re-derived from the reviewed upstream revision, then creates the
+# annotated release tag that publish.yml publishes from.
+#
+# Trigger: `push` to main, not `pull_request: closed`. A pull_request run executes the pull request's own
+# copy of this file on refs/pull/<n>/merge, which the `release-tag` environment (main only) refuses; a push
+# to main runs main's copy. `pull_request_target` is never used.
+#
+# This repository's logs are public. The verify job prints only tree hashes, closed reason codes and
+# OK/FAIL; the upstream checkout lives in a temporary directory removed on exit, and nothing from it is
+# uploaded.
+#
+# The package export is re-derived with the source revision's own exporter (`exporter` in
+# .github/release-surface.json); this repository holds that export plus .github/.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-tag-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      release_id: ${{ steps.gate.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # RELEASE_TAG_SOURCE_READ (repository variable, default unset = off): the read-only source token exists
+      # only once a director has created its App. While off, a release merge is refused with the fixed code
+      # `source-read-disabled` and nothing is tagged; every other merge still reads "not a release merge".
+      - name: Is this the merge of a release pull request?
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PUSH_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SOURCE_READ_ENABLED: ${{ vars.RELEASE_TAG_SOURCE_READ }}
+        run: node .github/scripts/release-tag-gate.mjs
+
+  verify:
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release-tag
+    permissions:
+      contents: read
+    outputs:
+      source_tree: ${{ steps.verify.outputs.source_tree }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # The read-only source token is minted, used and revoked before any third-party setup code runs in this
+      # job: the Flutter toolchain (subosito/flutter-action, needed by the exporter's `dart pub publish
+      # --dry-run`) is installed only after the token is dead and dropped from the checkout.
+      - name: Mint a read-only token for the upstream source repository
+        id: source-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ secrets.SOURCE_READ_APP_ID }}
+          private-key: ${{ secrets.SOURCE_READ_APP_PRIVATE_KEY }}
+          owner: rakomidev
+          repositories: rakomi
+          permission-contents: read
+          # Revoked by the fetch step below, before the Flutter toolchain is installed.
+          skip-token-revoke: true
+
+      - name: Fetch the release source, then revoke the token (prints only tree hashes and OK/FAIL)
+        env:
+          SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_REPO: rakomidev/rakomi
+          MERGE_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          RELEASE_ID: ${{ needs.gate.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          WORK="${RUNNER_TEMP}/release-source"
+          mkdir "${WORK}"
+          REVOKED=0
+          source_api() {
+            printf 'header = "Authorization: Bearer %s"\n' "${SOURCE_TOKEN}" \
+              | curl -fsS --proto '=https' -K - -H "Accept: application/vnd.github+json" "$@" 2>/dev/null
+          }
+          revoke() { source_api -X DELETE "https://api.github.com/installation/token" >/dev/null; }
+          on_exit() {
+            RC=$?
+            if [ "${REVOKED}" != 1 ]; then revoke || true; fi
+            if [ "${RC}" -ne 0 ]; then rm -rf "${WORK:?}"; fi
+          }
+          trap on_exit EXIT
+          fail() {
+            echo "source-equality derived=none published=none FAIL $1"
+            exit "${2:-1}"
+          }
+          quiet() { "$@" >/dev/null 2>&1; }
+
+          # The upstream revision comes from the private trigger tag sdk-release-v<id> (id = the release branch
+          # minus `release/`), read through the API with the read-only token. It is never printed: it is masked
+          # at once, and the public commit and tag carry no upstream sha at all.
+          [[ "${RELEASE_ID}" =~ ^[0-9A-Za-z.+-]+$ ]] || fail release-id-invalid
+          REF_JSON="$(source_api "https://api.github.com/repos/${SOURCE_REPO}/git/ref/tags/sdk-release-v${RELEASE_ID//+/%2B}")" || fail source-trigger-tag-missing
+          OBJ_TYPE="$(jq -r '.object.type' <<<"${REF_JSON}" 2>/dev/null)" || fail source-trigger-tag-invalid
+          OBJ_SHA="$(jq -r '.object.sha' <<<"${REF_JSON}" 2>/dev/null)" || fail source-trigger-tag-invalid
+          if [ "${OBJ_TYPE}" = "tag" ]; then
+            TAG_JSON="$(source_api "https://api.github.com/repos/${SOURCE_REPO}/git/tags/${OBJ_SHA}")" || fail source-trigger-tag-missing
+            OBJ_TYPE="$(jq -r '.object.type' <<<"${TAG_JSON}" 2>/dev/null)" || fail source-trigger-tag-invalid
+            OBJ_SHA="$(jq -r '.object.sha' <<<"${TAG_JSON}" 2>/dev/null)" || fail source-trigger-tag-invalid
+          fi
+          [ "${OBJ_TYPE}" = "commit" ] && [[ "${OBJ_SHA}" =~ ^[0-9a-f]{40}$ ]] || fail source-trigger-tag-invalid
+          SOURCE_COMMIT="${OBJ_SHA}"
+          echo "::add-mask::${SOURCE_COMMIT}"
+
+          SRC="${WORK}/src"
+          AUTH_B64="$(printf 'x-access-token:%s' "${SOURCE_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${AUTH_B64}"
+          quiet git init -q "${SRC}" || fail source-fetch 2
+          quiet git -C "${SRC}" config http.https://github.com/.extraheader "AUTHORIZATION: basic ${AUTH_B64}" || fail source-fetch 2
+          quiet git -C "${SRC}" remote add origin "https://github.com/${SOURCE_REPO}.git" || fail source-fetch 2
+          quiet git -C "${SRC}" fetch -q --filter=blob:none --no-tags origin "+refs/heads/main:refs/remotes/origin/main" || fail source-fetch 2
+          quiet git -C "${SRC}" merge-base --is-ancestor "${SOURCE_COMMIT}" refs/remotes/origin/main || fail source-not-on-default-branch
+          quiet git -C "${SRC}" -c advice.detachedHead=false checkout -q "${SOURCE_COMMIT}" || fail source-checkout 2
+
+          # Every script this job runs below comes from .github of the merge commit. Run none of them unless
+          # that tree is the reviewed template of the upstream source (at the source revision or at the tip
+          # of its default branch), and the release pull request head carries the same tree.
+          GH_TREE="$(git rev-parse "${MERGE_SHA}:.github")"
+          HEAD_GH_TREE="$(git rev-parse "${HEAD_SHA}:.github")"
+          TPL_AT_SOURCE="$(git -C "${SRC}" rev-parse "${SOURCE_COMMIT}:public-repo-template-flutter/.github" 2>/dev/null || echo none)"
+          TPL_AT_MAIN="$(git -C "${SRC}" rev-parse "refs/remotes/origin/main:public-repo-template-flutter/.github" 2>/dev/null || echo none)"
+          if [ "${GH_TREE}" != "${HEAD_GH_TREE}" ] || { [ "${GH_TREE}" != "${TPL_AT_SOURCE}" ] && [ "${GH_TREE}" != "${TPL_AT_MAIN}" ]; }; then
+            fail workflow-tree-not-reviewed
+          fi
+          echo "workflow-tree ${GH_TREE} OK"
+
+          # From here on nothing needs the upstream credential: drop it from the checkout's git config, revoke
+          # the token and clear it from this shell before any script, toolchain or upstream assembler runs.
+          quiet git -C "${SRC}" config --unset-all http.https://github.com/.extraheader || fail source-credential-drop 2
+          revoke || fail source-token-revoke 2
+          REVOKED=1
+          unset SOURCE_TOKEN AUTH_B64
+          git worktree prune >/dev/null 2>&1 || true
+          echo "source fetched; token revoked"
+
+      # The exporter lists the pub.dev publish set with `dart pub publish --dry-run`.
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: "3.41.7"
+          cache: false
+
+      - name: Verify the release source (prints only tree hashes and OK/FAIL)
+        id: verify
+        env:
+          MERGE_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          WORK="${RUNNER_TEMP}/release-source"
+          cleanup() {
+            rm -rf "${WORK:?}"
+            git worktree prune >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          PUBLIC_ROOT="${GITHUB_WORKSPACE}" SOURCE_ROOT="${WORK}/src" node .github/scripts/verify-source-equality.mjs
+
+  tag:
+    needs: [gate, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-tag
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Plan the release tag from the verified head
+        id: plan
+        env:
+          RELEASE_ID: ${{ needs.gate.outputs.release_id }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          SOURCE_TREE: ${{ needs.verify.outputs.source_tree }}
+        run: node .github/scripts/release-tag-plan.mjs
+
+      - name: Mint the release-tag token
+        id: tag-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ secrets.RELEASE_TAG_APP_ID }}
+          private-key: ${{ secrets.RELEASE_TAG_APP_PRIVATE_KEY }}
+          owner: rakomidev
+          repositories: rakomi-flutter
+          permission-contents: write
+
+      - name: Create the annotated release tag on the reviewed head
+        env:
+          TAG_TOKEN: ${{ steps.tag-token.outputs.token }}
+          TAGS: ${{ steps.plan.outputs.tags }}
+          ALL_TAGS: ${{ steps.plan.outputs.all_tags }}
+          SOURCE_TREE: ${{ needs.verify.outputs.source_tree }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          AUTH_B64="$(printf 'x-access-token:%s' "${TAG_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${AUTH_B64}"
+          git config user.name "Rakomi Release Bot"
+          git config user.email "release-bot@rakomi.com"
+          for TAG in ${TAGS}; do
+            MESSAGE="$(printf '%s\n\nRelease-PR: #%s\nSource-Tree: %s\nRelease-Tags: %s\n' "${TAG}" "${PR_NUMBER}" "${SOURCE_TREE}" "${ALL_TAGS}")"
+            git tag -a "${TAG}" -m "${MESSAGE}" "${HEAD_SHA}"
+            git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${AUTH_B64}" push origin "refs/tags/${TAG}"
+            echo "created ${TAG} at ${HEAD_SHA}"
+          done

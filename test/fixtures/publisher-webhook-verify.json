@@ -1,0 +1,413 @@
+{
+  "description": "Conformance vectors for the Rakomi publisher-webhook receiver (Standard Webhooks HMAC-SHA256) shared by every Rakomi SDK.",
+  "$schema": "publisher-webhook-verify-vectors/v1",
+  "error_classes": [
+    "invalid_signature",
+    "invalid_secret",
+    "missing_header",
+    "timestamp_too_old",
+    "timestamp_too_new",
+    "invalid_body"
+  ],
+  "notes": {
+    "now_override": "unix seconds — the verifier MUST treat THIS as \"now\" (pin the clock) for freshness.",
+    "tolerance": "replay window in seconds (300 default, 600 max clamp).",
+    "secret": "rksec_<base64url> signing secret; non-rksec_ is rejected by the publisher entry point.",
+    "signature_alphabet": "the SECRET is base64url (-/_); the SIGNATURE is standard base64 (+//)."
+  },
+  "vectors": [
+    {
+      "name": "valid-single-sig",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "tampered-body",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"x\",\"correlation_id\":\"y\",\"tampered\":true}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_signature"
+      }
+    },
+    {
+      "name": "wrong-secret",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,Q/c0sugem5y4t1qE/+YTF5cH9T43zWRwM0vS5PQ0ma0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_signature"
+      }
+    },
+    {
+      "name": "expired-too-old",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000400,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "timestamp_too_old"
+      }
+    },
+    {
+      "name": "future-too-new",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1699999600,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "timestamp_too_new"
+      }
+    },
+    {
+      "name": "missing-signature-header",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "missing_header"
+      }
+    },
+    {
+      "name": "mixed-case-headers",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "Webhook-Id": "wid_550e8400e29b41d4a716446655440000",
+        "Webhook-Timestamp": "1700000000",
+        "Webhook-Signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "X-Rakomi-Delivery-Id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "X-Rakomi-Event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "rotation-old-key",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,Q/c0sugem5y4t1qE/+YTF5cH9T43zWRwM0vS5PQ0ma0= v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "unknown-future-scheme",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v2,AAAA v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "all-unknown-scheme",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v2,AAAA v3,BBBB",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_signature"
+      }
+    },
+    {
+      "name": "empty-signature-header",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": null
+      }
+    },
+    {
+      "name": "short-secret-31",
+      "secret": "rksec_AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_secret"
+      }
+    },
+    {
+      "name": "short-secret-33",
+      "secret": "rksec_AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_secret"
+      }
+    },
+    {
+      "name": "padding-variant-secret",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "non-rksec-secret",
+      "secret": "this-is-a-raw-utf8-secret-not-prefixed",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_secret"
+      }
+    },
+    {
+      "name": "malformed-base64-sig",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,@@@",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_signature"
+      }
+    },
+    {
+      "name": "wrong-length-decoded-sig",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,AQEBAQEBAQEBAQEBAQEBAQ==",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "invalid_signature"
+      }
+    },
+    {
+      "name": "nan-timestamp",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "not-a-number",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": false,
+        "error_class": "missing_header"
+      }
+    },
+    {
+      "name": "webhook-id-with-dot",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid.with.dots.450e8400",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,nU+rkGsio1lUq3F8yGkC4+PZLpNFS5O/6/AuPLP5UnY=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "unicode-body",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"note\":\"café — \\\"quoted\\\" — 🛰\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,uDhXYmHBYccAWs+dj+G29LWXhCP59JuKelZr4NT3Bgs=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "unknown-event-type",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{\"publisher_id\":\"11111111-1111-4111-8111-111111111111\",\"app_id\":\"22222222-2222-4222-8222-222222222222\",\"app_version_id\":\"33333333-3333-4333-8333-333333333333\",\"installation_id\":\"44444444-4444-4444-8444-444444444444\",\"correlation_id\":\"55555555-5555-4555-8555-555555555555\",\"actor_axis\":\"tenant_admin\"}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,VltZ2EVvEreFL5hZ9OBl11c7jPa4GQUPFbQiC3/EJt0=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "some.future.event.v9"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    },
+    {
+      "name": "empty-json-object-body",
+      "secret": "rksec_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "body": "{}",
+      "headers": {
+        "webhook-id": "wid_550e8400e29b41d4a716446655440000",
+        "webhook-timestamp": "1700000000",
+        "webhook-signature": "v1,Z9SNXvKGOkeCPm2lir48o6rh8u7uo6bm7opmAhK0EMg=",
+        "x-rakomi-delivery-id": "did_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-rakomi-event": "app.uninstalled"
+      },
+      "now_override": 1700000000,
+      "tolerance": 300,
+      "expect": {
+        "ok": true,
+        "error_class": null
+      }
+    }
+  ]
+}
