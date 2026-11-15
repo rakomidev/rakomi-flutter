@@ -1,0 +1,3 @@
+# pub.dev receives the package. The tests and the release SBOM stay in this repository.
+test/
+sbom.cdx.json

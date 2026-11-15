@@ -1,0 +1,10 @@
+{
+  "surface": "flutter",
+  "repository": "rakomidev/rakomi-flutter",
+  "package": "rakomi_flutter",
+  "tagFormat": "v{{version}}",
+  "version": { "file": "pubspec.yaml", "kind": "pubspec" },
+  "sbom": "sbom.cdx.json",
+  "releaseTimeFiles": ["sbom.cdx.json"],
+  "exporter": "scripts/export-flutter-cleanroom.mjs"
+}
