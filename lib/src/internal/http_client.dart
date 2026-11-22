@@ -8,18 +8,26 @@ import 'package:http/http.dart' as http;
 /// - W3C Trace Context propagation (opt-in via `Zone.current[#traceparent]`,
 ///   no default behavior change).
 /// - Automatic `User-Agent: rakomi_flutter/<version>`.
+/// - The tenant's publishable key, as `X-API-Key`.
 /// - JSON helpers + token redaction in error logs.
 class RakomiHttpClient {
-  RakomiHttpClient(this.inner, {required this.userAgent});
+  RakomiHttpClient(this.inner, {required this.userAgent, this.publishableKey});
 
   final http.Client inner;
   final String userAgent;
+
+  /// Tenant-scoped publishable key. The first-party auth routes are gated on it
+  /// and read it from `X-API-Key`; a request without it is answered 401 before
+  /// its body is considered.
+  final String? publishableKey;
 
   Map<String, String> _baseHeaders(Map<String, String>? extra) {
     final h = <String, String>{
       'User-Agent': userAgent,
       'Accept': 'application/json',
     };
+    final key = publishableKey;
+    if (key != null && key.isNotEmpty) h['X-API-Key'] = key;
     final traceparent = Zone.current[#traceparent];
     if (traceparent is String && traceparent.isNotEmpty) {
       h['traceparent'] = traceparent;

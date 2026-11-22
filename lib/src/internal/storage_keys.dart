@@ -28,17 +28,43 @@ const String kStorageNamespace = 'rakomi.v1';
 String refreshTokenKey(String tenantId) =>
     '$kStorageNamespace.refresh_token.$tenantId';
 
-/// JWKS cache key. `rakomi.v1.jwks.<tenantId>`. Holds the JSON-encoded JWKS
-/// document; ETag tracked separately.
-String jwksCacheKey(String tenantId) => '$kStorageNamespace.jwks.$tenantId';
+/// The OAuth client a stored session was issued to, when it was issued to one
+/// (browser sign-in, authorization code). `rakomi.v1.oauth_client_id.<tenantId>`.
+/// Such a session refreshes at `/oauth/token` with that `client_id`; a session
+/// without it (password, magic link, OTP, MFA) refreshes at `/v1/auth/refresh`.
+/// Written and cleared together with the refresh token.
+String oauthClientIdKey(String tenantId) =>
+    '$kStorageNamespace.oauth_client_id.$tenantId';
 
-/// JWKS ETag key. `rakomi.v1.jwks_etag.<tenantId>`.
-String jwksEtagKey(String tenantId) => '$kStorageNamespace.jwks_etag.$tenantId';
+/// JWKS cache key. `rakomi.v1.jwks.<tenantId>[.h.<host>]`. Holds the
+/// JSON-encoded JWKS document; ETag tracked separately.
+///
+/// **Per-host scoping**: [host], when given, is appended as an additional
+/// segment (`.h.<host>`) on top of the tenant scope. A tenant's issuer host
+/// can change across the app's lifetime (a custom domain bound after this
+/// SDK version first shipped, or simply a dev pointed at a different host
+/// between builds) — a slot keyed by tenant alone would silently reuse a
+/// PREVIOUS host's persisted document as this instance's "fresh" cache on
+/// cold start, which offline verification must never do. The host segment is
+/// not secret (it is the caller's own `jwksUrl` configuration), so a plain
+/// suffix is enough — this only needs to be a stable, DIFFERENT key per
+/// host, not a cryptographically-opaque one. Mirrors
+/// `@rakomi/react-native`'s `resolveJwksKey`
+/// (`packages/react-native/src/internal/token-runtime.ts`).
+String jwksCacheKey(String tenantId, {String? host}) => host == null
+    ? '$kStorageNamespace.jwks.$tenantId'
+    : '$kStorageNamespace.jwks.$tenantId.h.$host';
+
+/// JWKS ETag key. `rakomi.v1.jwks_etag.<tenantId>[.h.<host>]`.
+String jwksEtagKey(String tenantId, {String? host}) => host == null
+    ? '$kStorageNamespace.jwks_etag.$tenantId'
+    : '$kStorageNamespace.jwks_etag.$tenantId.h.$host';
 
 /// JWKS cache timestamp key (UTC millisecondsSinceEpoch).
-/// `rakomi.v1.jwks_fetched_at.<tenantId>`.
-String jwksFetchedAtKey(String tenantId) =>
-    '$kStorageNamespace.jwks_fetched_at.$tenantId';
+/// `rakomi.v1.jwks_fetched_at.<tenantId>[.h.<host>]`.
+String jwksFetchedAtKey(String tenantId, {String? host}) => host == null
+    ? '$kStorageNamespace.jwks_fetched_at.$tenantId'
+    : '$kStorageNamespace.jwks_fetched_at.$tenantId.h.$host';
 
 /// OAuth state key. `rakomi.v1.oauth_state.<tenantId>.<oneTimeId>`.
 /// Single-use: deleted post-validation regardless of outcome.

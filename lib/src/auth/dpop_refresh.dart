@@ -17,6 +17,7 @@
 //     attempts) and runs AT MOST once; a second challenge is terminal.
 
 import 'dpop_session.dart';
+import 'refresh_failure.dart';
 
 /// RFC 9449 three-class client-side refresh failure taxonomy (+ network).
 enum DpopRefreshErrorClass {
@@ -54,10 +55,26 @@ extension DpopRefreshErrorClassWire on DpopRefreshErrorClass {
 /// A typed DPoP-refresh failure. NEVER carries token/proof/key material in
 /// [message] — error class + a short non-secret note only.
 class DpopRefreshError {
-  const DpopRefreshError(this.errorClass, this.message);
+  const DpopRefreshError(
+    this.errorClass,
+    this.message, {
+    this.statusCode,
+    this.oauthError,
+    this.retryAfter,
+  });
 
   final DpopRefreshErrorClass errorClass;
   final String message;
+
+  /// HTTP status of the failed exchange (absent for a transport failure or a
+  /// local prover failure).
+  final int? statusCode;
+
+  /// RFC 6749 §5.2 `error` code from the response body, when present.
+  final String? oauthError;
+
+  /// Raw `Retry-After` response header, when the server sent one.
+  final String? retryAfter;
 
   /// `auth/<class>` string — parity with the Node and React Native SDKs.
   String get code => errorClass.wire;
@@ -77,6 +94,7 @@ class TokenPostResult {
     this.oauthError,
     this.dpopNonce,
     this.networkFailure = false,
+    this.retryAfter,
   });
 
   /// HTTP status (0 when [networkFailure] — no response was received).
@@ -91,8 +109,9 @@ class TokenPostResult {
   /// `refresh_token` from a 200 body (may be rotated).
   final String? refreshToken;
 
-  /// RFC 6749 §5.2 `error` code from a non-200 body (`use_dpop_nonce`,
-  /// `invalid_dpop_proof`, `invalid_grant`,...).
+  /// Error code from a non-200 body, as read by `refreshErrorCode`
+  /// (`use_dpop_nonce`, `invalid_dpop_proof`, `invalid_grant`,
+  /// `user_blocked`,...).
   final String? oauthError;
 
   /// RFC 9449 §8 server nonce from the `DPoP-Nonce` response header, when the
@@ -101,6 +120,9 @@ class TokenPostResult {
 
   /// `true` when the request threw before a response (DNS/TLS/socket).
   final bool networkFailure;
+
+  /// Raw `Retry-After` response header (RFC 9110 §10.2.3), when present.
+  final String? retryAfter;
 
   bool get isOk => statusCode == 200 && accessToken != null;
 }
@@ -182,7 +204,14 @@ Future<DpopRefreshOutcome> refreshWithDpop({
 
   // ── Single bounded nonce retry: rebuild the proof (fresh jti) with the
   //    server nonce, re-present the SAME refresh_token. At most once. ──
-  if (!result.isOk && result.dpopNonce != null) {
+  // A nonce challenge is a 4xx; a transient status (5xx/429/408) that happens to
+  // carry a `DPoP-Nonce` header is a "try again later", not a challenge, and a
+  // 2xx (even an unreadable one) has consumed the refresh token.
+  if (!result.isOk &&
+      result.dpopNonce != null &&
+      result.statusCode >= 400 &&
+      result.statusCode < 500 &&
+      !isTransientHttpStatus(result.statusCode)) {
     String retryProof;
     try {
       retryProof = await session.resolveProof(
@@ -220,24 +249,68 @@ DpopRefreshOutcome _mapFailure(TokenPostResult result) {
       DpopRefreshError(DpopRefreshErrorClass.network, 'network failure'),
     );
   }
+  // A 2xx the SDK could not use (an unreadable body, no `access_token`): the
+  // server has consumed the presented refresh token, and presenting it again
+  // would be a reuse, which revokes every session of the user. The session is
+  // over locally; never retried.
+  if (result.statusCode >= 200 && result.statusCode < 300) {
+    return DpopRefreshOutcome.failure(
+      DpopRefreshError(
+        DpopRefreshErrorClass.invalidRefreshToken,
+        'refresh response unreadable',
+        statusCode: result.statusCode,
+      ),
+    );
+  }
+  final kind = classifyRefreshFailure(result.statusCode, result.oauthError);
+  // A 5xx/429/408 says nothing about the grant or the proof: keep the key and
+  // the binding, and let the caller retry later.
+  if (kind == RefreshFailureKind.transient) {
+    return DpopRefreshOutcome.failure(
+      DpopRefreshError(
+        DpopRefreshErrorClass.network,
+        'token endpoint unavailable (HTTP ${result.statusCode})',
+        statusCode: result.statusCode,
+        oauthError: result.oauthError,
+        retryAfter: result.retryAfter,
+      ),
+    );
+  }
   // A proof rejection (or a nonce challenge that survived the single retry — a
   // second `use_dpop_nonce` is a proof problem, not a revocation) is the distinct,
   // rollback-actionable `invalidDpopProof` class.
   if (result.oauthError == 'invalid_dpop_proof' ||
       result.oauthError == 'use_dpop_nonce' ||
       result.dpopNonce != null) {
-    return const DpopRefreshOutcome.failure(
+    return DpopRefreshOutcome.failure(
       DpopRefreshError(
         DpopRefreshErrorClass.invalidDpopProof,
         'server rejected the DPoP proof',
+        statusCode: result.statusCode,
+        oauthError: result.oauthError,
       ),
     );
   }
-  // Genuine revocation/expiry (or any other terminal auth failure) ⇒ full re-login.
-  return const DpopRefreshOutcome.failure(
+  if (kind == RefreshFailureKind.definitive) {
+    // Genuine revocation/expiry ⇒ full re-login.
+    return DpopRefreshOutcome.failure(
+      DpopRefreshError(
+        DpopRefreshErrorClass.invalidRefreshToken,
+        'refresh token rejected',
+        statusCode: result.statusCode,
+        oauthError: result.oauthError,
+      ),
+    );
+  }
+  // Any other 4xx (a 403 from a proxy, a 400 `invalid_request`) is not a
+  // statement that the grant is gone: keep the session. It is reported in the
+  // network class with its status, and the caller maps it by that status.
+  return DpopRefreshOutcome.failure(
     DpopRefreshError(
-      DpopRefreshErrorClass.invalidRefreshToken,
-      'refresh token rejected',
+      DpopRefreshErrorClass.network,
+      'token endpoint rejected the request (HTTP ${result.statusCode})',
+      statusCode: result.statusCode,
+      oauthError: result.oauthError,
     ),
   );
 }

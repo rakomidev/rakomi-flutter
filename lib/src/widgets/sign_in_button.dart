@@ -26,6 +26,10 @@ class RakomiSignInButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = RakomiProvider.maybeOf(context);
     if (auth == null) return const SizedBox.shrink();
+    // Fail closed: without a configured `clientId`, the browser/PKCE flow
+    // can never complete — see `oauth/social_auth.dart`'s doc comment.
+    final clientId = auth.clientId;
+    if (clientId == null || clientId.isEmpty) return const SizedBox.shrink();
     final providerWidget = context
         .findAncestorWidgetOfExactType<RakomiProvider>();
     final redirectUri = providerWidget?.redirectUri ?? 'rakomi://callback';
