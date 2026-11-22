@@ -3,7 +3,7 @@ description: >-
   Rakomi Flutter SDK — RFC 8252-compliant OAuth/PKCE authentication for Flutter
   apps targeting iOS, Android and Flutter Web. Platform-native secure storage,
   biometric unlock, MFA (TOTP), offline-tolerant JWKS verification.
-version: 0.1.0
+version: 0.2.0
 # API VERSION TARGETED: /v1. This SDK is versioned independently of the Rakomi API and independently
 # of every other Rakomi SDK, pinned to the API surface it was built and tested against — a
 # documentation/release-process discipline, not a runtime negotiation mechanism. State the targeted

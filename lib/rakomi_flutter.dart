@@ -6,7 +6,8 @@
 library;
 
 // Auth — controller, state, errors, models
-export 'src/auth/auth_controller.dart' show RakomiAuth, kDefaultRefreshLeadtime;
+export 'src/auth/auth_controller.dart'
+    show RakomiAuth, kDefaultRefreshLeadtime, kDefaultBiometricPromptReason;
 export 'src/auth/auth_event.dart'
     show AuthEvent, AuthEventType, AuthEventSeverity;
 export 'src/auth/auth_state.dart'
@@ -68,6 +69,14 @@ export 'src/native/adapter.dart'
         BiometricNotEnrolled,
         BiometricUnavailable;
 export 'src/native/default_adapter.dart' show DefaultRakomiNativeAdapter;
+// MFA-TOTP step-up verification. `RakomiMfaFlow.verifyMfaImpl` is the public
+// entry point `RakomiAuth.verifyMfa()`'s stub error message points to; it
+// was never actually exported from this barrel before — the widgets
+// (`RakomiSignInForm`) reached it only because they live inside the package
+// and can import `src/oauth/mfa.dart` directly. An app calling
+// `RakomiAuth.verifyMfa()` per that stub's own advice had no public import
+// path to the extension it named.
+export 'src/oauth/mfa.dart' show RakomiMfaFlow;
 // OAuth — public facade for programmatic social sign-in (the widgets
 // `RakomiSignInForm` / `RakomiSignInButton` use this internally).
 export 'src/oauth/social_auth.dart' show performSocialSignIn;

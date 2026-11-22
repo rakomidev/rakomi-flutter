@@ -212,7 +212,13 @@ class _RakomiSignInFormState extends State<RakomiSignInForm> {
                     onPressed: () => _signIn(auth),
                     child: const Text('Sign in'),
                   )),
-      if (widget.providers.isNotEmpty) ...<Widget>[
+      // Fail closed: without a configured `clientId`, the browser/PKCE flow
+      // can never complete (`RakomiOAuthFlow.signInWithProviderImpl` returns
+      // `invalidConfig` before opening a browser) — render no provider
+      // buttons at all rather than ones that only lead to that error.
+      if (widget.providers.isNotEmpty &&
+          auth.clientId != null &&
+          auth.clientId!.isNotEmpty) ...<Widget>[
         SizedBox(height: style.spacing * 2),
         for (final p in widget.providers)
           Padding(

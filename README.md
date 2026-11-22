@@ -36,7 +36,7 @@ void main() => runApp(MaterialApp(home: RakomiProvider(
 - **Multi-tenant by design**: the tenant boundary is enforced at the JWT issuer
   level, with row-level-security-backed storage at the API. A single set of
   credentials serves many tenants; no per-tenant project is required.
-- **Open standards**: OAuth 2.0, OIDC, PKCE S256, JWT/JWKS, RS256 — no
+- **Open standards**: OAuth 2.0, OIDC, PKCE S256, JWT/JWKS, RS256/PS256/ES256 — no
   proprietary token format, no cookies, no session affinity.
 - **Documented security posture**: coordinated vulnerability disclosure via
   `security@rakomi.com` (see `SECURITY.md`), and vulnerability records kept
@@ -44,7 +44,8 @@ void main() => runApp(MaterialApp(home: RakomiProvider(
 
 ## OIDC vs OAuth 2.0 in Rakomi
 
-The SDK consumes **OAuth 2.0** access tokens (RS256-signed JWTs). `id_token`
+The SDK consumes **OAuth 2.0** access tokens (JWTs signed with RS256, PS256 or
+ES256, verified only against the keys at the issuer's own `jwks_uri`). `id_token`
 handling for full OIDC compliance is planned and does not ship today.
 
 ## Tenant scope vs OAuth scopes
@@ -198,7 +199,7 @@ XSS in your app reads the token. Mitigations:
 - **GDPR Art. 25** (privacy by design): non-blocking mount, no telemetry, no
   token logging, secure-storage namespacing.
 - **GDPR Art. 32** (technical measures): Keychain/EncryptedSharedPreferences
-  encryption-at-rest; RS256; CSPRNG; HTTPS required for the API base URL, with
+  encryption-at-rest; RS256/PS256/ES256 token signatures; CSPRNG; HTTPS required for the API base URL, with
   a development-only `http://` exception (see "Transport security" below);
   redacted error strings.
 - **NIS2** (Reg. 2022/2555): coordinated vulnerability disclosure — see

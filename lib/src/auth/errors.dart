@@ -163,6 +163,8 @@ class SdkError {
     this.errorMessage,
     this.providerError,
     this.cause,
+    this.httpStatus,
+    this.retryAfter,
   });
 
   final SdkErrorCode code;
@@ -170,6 +172,15 @@ class SdkError {
   final String? errorMessage;
   final String? providerError;
   final Object? cause;
+
+  /// HTTP status of the response that caused this error, when the server
+  /// answered. Absent for a transport failure or a purely local error.
+  final int? httpStatus;
+
+  /// The server's `Retry-After` (RFC 9110 §10.2.3), when it sent one. Set on
+  /// a transient refresh failure; the SDK sends no further refresh before it
+  /// has elapsed (capped at two minutes).
+  final Duration? retryAfter;
 
   /// JWT-shape redaction regex.
   ///
@@ -209,6 +220,8 @@ class SdkError {
       'code=${code.wire}',
       'reason=${reason.wire}',
       if (errorMessage != null) 'message=$_redactedMessage',
+      if (httpStatus != null) 'status=$httpStatus',
+      if (retryAfter != null) 'retryAfter=${retryAfter!.inSeconds}s',
       // Redacted: the value comes from the provider's `error_description`,
       // which arrives on the callback URL and is therefore attacker-influenced.
       if (providerError != null) 'provider=${_redact(providerError)}',
@@ -221,5 +234,7 @@ class SdkError {
     'reason': reason.wire,
     if (errorMessage != null) 'errorMessage': _redactedMessage,
     if (providerError != null) 'providerError': _redact(providerError),
+    if (httpStatus != null) 'httpStatus': httpStatus,
+    if (retryAfter != null) 'retryAfterMs': retryAfter!.inMilliseconds,
   };
 }

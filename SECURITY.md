@@ -76,10 +76,6 @@ where the moderators establish that no widespread use has begun
 not from resolution. The registry states the underlying rule plainly: **a published package lasts
 forever.**
 
-**A Swift Package version is a tag in a source repository.** Deleting or moving a published tag is
-technically possible, and we do not do it. Removing a tag breaks resolution for everyone who pinned
-the version as documented, and it does not retract anything already fetched or already attested.
-
 **Consequence, and it is the operative sentence:** a defect in a published version is corrected by
 publishing a fixed, higher version together with disclosure through the channels named above —
 never by withdrawing the defective one. We treat this as a reason to be slower before a release, not

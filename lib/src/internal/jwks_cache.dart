@@ -2,9 +2,8 @@ import 'dart:async' show Future;
 import 'dart:convert' show jsonDecode;
 
 import 'package:http/http.dart' as http;
-import 'package:pointycastle/asymmetric/api.dart' as pc;
-
-import 'jwt_verify.dart' show rsaPublicKeyFromJwk;
+import 'issuer_jwks.dart' show resolveIssuerJwksUri;
+import 'jwt_verify.dart' show VerificationKey, verificationKeyFromJwk;
 import 'storage_keys.dart';
 
 /// JWKS cache.
@@ -31,27 +30,64 @@ abstract class JwksStorage {
 }
 
 class JwksCache {
+  /// Reads keys either from an explicit [jwksUrl] (a proxy or mirror), or —
+  /// when [jwksUrl] is `null` — from the `jwks_uri` named in [issuer]'s
+  /// discovery document, fetched from [discoveryOrigin] when given. Exactly one
+  /// of [jwksUrl] and [issuer] must be provided.
   JwksCache({
     required this.tenantId,
-    required this.jwksUrl,
+    this.jwksUrl,
+    this.issuer,
+    this.discoveryOrigin,
     required this.storage,
     required this.httpClient,
-  });
+  }) : assert(
+         (jwksUrl == null) != (issuer == null),
+         'provide exactly one of jwksUrl or issuer',
+       );
 
   final String tenantId;
-  final Uri jwksUrl;
+  final Uri? jwksUrl;
+  final String? issuer;
+  final Uri? discoveryOrigin;
   final JwksStorage storage;
   final http.Client httpClient;
 
-  /// In-memory parsed cache of `kid → RSAPublicKey`. Repopulated on
+  /// The persisted storage slot is scoped to the key source (in addition to
+  /// the tenant) — see [jwksCacheKey]'s doc comment: the explicit [jwksUrl]'s
+  /// host, or the discovery origin's host plus the expected [issuer], so keys
+  /// persisted for another issuer are never reused. `null` only for an empty
+  /// host; the bare tenant-only slot is then used as a defensive fallback.
+  String? get _host {
+    final explicit = jwksUrl;
+    if (explicit != null) return explicit.host.isEmpty ? null : explicit.host;
+    final iss = issuer!;
+    final originHost = (discoveryOrigin ?? Uri.parse(iss)).host;
+    if (originHost.isEmpty) return null;
+    return '$originHost.i.${Uri.encodeComponent(iss)}';
+  }
+
+  /// The JWKS document URL: the explicit override, or the expected issuer's
+  /// discovered `jwks_uri`.
+  Future<Uri> _currentJwksUrl() async {
+    final explicit = jwksUrl;
+    if (explicit != null) return explicit;
+    return resolveIssuerJwksUri(
+      issuer!,
+      httpClient,
+      discoveryOrigin: discoveryOrigin,
+    );
+  }
+
+  /// In-memory parsed cache of `kid → VerificationKey`. Repopulated on
   /// `getKeys()` (cold start or post-invalidate).
-  Map<String, pc.RSAPublicKey>? _cached;
+  Map<String, VerificationKey>? _cached;
 
   /// Single in-flight fetch dedup. Concurrent kid-miss retries on the same
   /// instance share one network round-trip.
-  Future<Map<String, pc.RSAPublicKey>>? _inflight;
+  Future<Map<String, VerificationKey>>? _inflight;
 
-  Future<Map<String, pc.RSAPublicKey>> getKeys({
+  Future<Map<String, VerificationKey>> getKeys({
     bool forceRefresh = false,
   }) async {
     if (!forceRefresh && _cached != null) return _cached!;
@@ -65,7 +101,7 @@ class JwksCache {
     }
   }
 
-  Future<Map<String, pc.RSAPublicKey>> _resolve({
+  Future<Map<String, VerificationKey>> _resolve({
     required bool forceRefresh,
   }) async {
     if (!forceRefresh) {
@@ -75,9 +111,11 @@ class JwksCache {
     return _fetchAndStore();
   }
 
-  Future<Map<String, pc.RSAPublicKey>?> _readCached() async {
-    final cached = await storage.readKey(jwksCacheKey(tenantId));
-    final fetchedAtRaw = await storage.readKey(jwksFetchedAtKey(tenantId));
+  Future<Map<String, VerificationKey>?> _readCached() async {
+    final cached = await storage.readKey(jwksCacheKey(tenantId, host: _host));
+    final fetchedAtRaw = await storage.readKey(
+      jwksFetchedAtKey(tenantId, host: _host),
+    );
     if (cached == null || fetchedAtRaw == null) return null;
     final fetchedAt = DateTime.fromMillisecondsSinceEpoch(
       int.parse(fetchedAtRaw),
@@ -94,21 +132,22 @@ class JwksCache {
     }
   }
 
-  Future<Map<String, pc.RSAPublicKey>> _fetchAndStore() async {
-    final etag = await storage.readKey(jwksEtagKey(tenantId));
+  Future<Map<String, VerificationKey>> _fetchAndStore() async {
+    final etag = await storage.readKey(jwksEtagKey(tenantId, host: _host));
     final headers = <String, String>{
       'Accept': 'application/json',
       'If-None-Match': ?etag,
     };
-    final response = await httpClient.get(jwksUrl, headers: headers);
+    final url = await _currentJwksUrl();
+    final response = await httpClient.get(url, headers: headers);
 
     if (response.statusCode == 304) {
       // Cached body still valid — refresh fetched-at timestamp.
       await storage.writeKey(
-        jwksFetchedAtKey(tenantId),
+        jwksFetchedAtKey(tenantId, host: _host),
         DateTime.now().toUtc().millisecondsSinceEpoch.toString(),
       );
-      final cached = await storage.readKey(jwksCacheKey(tenantId));
+      final cached = await storage.readKey(jwksCacheKey(tenantId, host: _host));
       if (cached == null) {
         throw const FormatException('JWKS 304 with empty cache');
       }
@@ -118,7 +157,7 @@ class JwksCache {
     if (response.statusCode != 200) {
       throw http.ClientException(
         'JWKS fetch failed: ${response.statusCode}',
-        jwksUrl,
+        url,
       );
     }
 
@@ -128,20 +167,20 @@ class JwksCache {
     }
     final keys = _parseJwks(body);
 
-    await storage.writeKey(jwksCacheKey(tenantId), body);
+    await storage.writeKey(jwksCacheKey(tenantId, host: _host), body);
     await storage.writeKey(
-      jwksFetchedAtKey(tenantId),
+      jwksFetchedAtKey(tenantId, host: _host),
       DateTime.now().toUtc().millisecondsSinceEpoch.toString(),
     );
     final newEtag = response.headers['etag'];
     if (newEtag != null) {
-      await storage.writeKey(jwksEtagKey(tenantId), newEtag);
+      await storage.writeKey(jwksEtagKey(tenantId, host: _host), newEtag);
     }
 
     return keys;
   }
 
-  Map<String, pc.RSAPublicKey> _parseJwks(String body) {
+  Map<String, VerificationKey> _parseJwks(String body) {
     final doc = jsonDecode(body);
     if (doc is! Map<String, Object?>) {
       throw const FormatException('JWKS root not an object');
@@ -150,23 +189,17 @@ class JwksCache {
     if (keys is! List) {
       throw const FormatException('JWKS missing keys[]');
     }
-    final out = <String, pc.RSAPublicKey>{};
+    final out = <String, VerificationKey>{};
     for (final raw in keys) {
       if (raw is! Map<String, Object?>) continue;
-      if (raw['kty'] != 'RSA') continue;
-      final use = raw['use'];
-      if (use != null && use != 'sig') continue;
-      final kid = raw['kid'];
-      if (kid is! String) continue;
-      try {
-        out[kid] = rsaPublicKeyFromJwk(raw);
-      } catch (_) {
-        // Skip malformed JWK entries, keep going (defense-in-depth).
-        continue;
-      }
+      // Only keys allowed to verify a signature (allowed alg on the key,
+      // matching key type, use absent or sig); malformed entries are skipped.
+      final key = verificationKeyFromJwk(raw);
+      if (key == null) continue;
+      out[raw['kid']! as String] = key;
     }
     if (out.isEmpty) {
-      throw const FormatException('JWKS contains no usable RSA sig keys');
+      throw const FormatException('JWKS contains no usable signing keys');
     }
     return out;
   }
@@ -176,8 +209,8 @@ class JwksCache {
   /// - future SSE/CAEP push invalidation
   Future<void> invalidate() async {
     _cached = null;
-    await storage.deleteKey(jwksCacheKey(tenantId));
-    await storage.deleteKey(jwksEtagKey(tenantId));
-    await storage.deleteKey(jwksFetchedAtKey(tenantId));
+    await storage.deleteKey(jwksCacheKey(tenantId, host: _host));
+    await storage.deleteKey(jwksEtagKey(tenantId, host: _host));
+    await storage.deleteKey(jwksFetchedAtKey(tenantId, host: _host));
   }
 }
