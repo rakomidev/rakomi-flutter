@@ -1,0 +1,127 @@
+{
+  "description": "DPoP htu canonicalization vectors (RFC 9449 §4.3) shared by every Rakomi SDK.",
+  "version": "1.1.0",
+  "cases": [
+    {
+      "input": "HTTPS://api.rakomi.com/oauth/token",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.2.1",
+      "rule": "lowercase scheme"
+    },
+    {
+      "input": "https://API.RAKOMI.com/oauth/token",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.2.1",
+      "rule": "lowercase host"
+    },
+    {
+      "input": "https://api.rakomi.com:443/oauth/token",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.3",
+      "rule": "strip default port https"
+    },
+    {
+      "input": "http://api.rakomi.com:80/oauth/token",
+      "expectedCanonical": "http://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.3",
+      "rule": "strip default port http"
+    },
+    {
+      "input": "https://api.rakomi.com/oauth/token#frag",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 9110 §7.1",
+      "rule": "strip fragment"
+    },
+    {
+      "input": "https://api.rakomi.com/oauth/token?next=evil",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3",
+      "rule": "strip query (defends ?next=evil replay)"
+    },
+    {
+      "input": "https://api.rakomi.com/oauth/token/",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.2.3",
+      "rule": "strip trailing slash on non-root path"
+    },
+    {
+      "input": "https://api.rakomi.com/oauth/token%2Fxyz",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token%2fxyz",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.2.2",
+      "rule": "lowercase percent-encoded hex"
+    },
+    {
+      "input": "https://exämple.com/oauth/token",
+      "expectedCanonical": "https://xn--exmple-cua.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3987 §3.1 / RFC 5891",
+      "rule": "IDN to Punycode"
+    },
+    {
+      "input": "https://api.rakomi.com/oauth/./token",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3986 §6.2.2.3",
+      "rule": "resolve dot segments"
+    },
+    {
+      "input": "https://api.rakomi.com//oauth//token",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3",
+      "rule": "collapse repeated slashes"
+    },
+    {
+      "input": "https://api.rakomi.com/",
+      "expectedCanonical": "https://api.rakomi.com/",
+      "rfc_section": "RFC 9449 §4.3 (boundary: root path)",
+      "rule": "root path preserved"
+    },
+    {
+      "input": "https://[::1]:8443/oauth/token",
+      "expectedCanonical": "https://[::1]:8443/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 (boundary: IPv6 literal)",
+      "rule": "IPv6 literal with non-default port"
+    },
+    {
+      "input": "https://café.com/oauth/token",
+      "expectedCanonical": "https://xn--caf-dma.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 — RFC 3987 §3.1 (NFC normalization)",
+      "rule": "Unicode NFC + IDN"
+    },
+    {
+      "input": "HTTPS://API.RAKOMI.COM:443/oauth/token/?next=evil#x",
+      "expectedCanonical": "https://api.rakomi.com/oauth/token",
+      "rfc_section": "RFC 9449 §4.3 (combined)",
+      "rule": "combined: scheme+host+port+query+fragment+trailing"
+    }
+  ],
+  "jwk_thumbprint_vectors": {
+    "note": "RFC 7638 JWK thumbprint golden vectors. Rotation is the FIRST time a port computes a `jkt` for a SELF-generated NEW key and trusts it to equal the server's TOFU bind, so a hand-rolled thumbprint that drifts (includes `alg`/`kid`, sorts wrong, pretty-prints) is a half-swap reached via canonicalization. Each native port's RFC 7638 implementation MUST reproduce these jkts byte-identically to jose's `calculateJwkThumbprint`. Canonical input is EXACTLY the required members for the key type, sorted by member-name code point, no whitespace: EC = {crv,kty,x,y}; OKP = {crv,kty,x}. NO `alg`/`kid`/`use`.",
+    "vectors": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "IOKd6c43K6dv7gFSDsZGd2yN4zySPwXU4wIG7gehzOY",
+        "y": "yzB48-7SGgkHDXP9B9NykqDikrmSw-Htyt_1gYqxw-I",
+        "expectedJkt": "8MtwOrEGUB4g6_CsFAQe2BDIRXsGoa7ht1tbOyWZcSA",
+        "canonical_member_set": "{crv,kty,x,y}",
+        "applies_to": [
+          "js",
+          "swift",
+          "flutter",
+          "rn"
+        ],
+        "rfc_section": "RFC 7638 §3.2"
+      },
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "3IhylZSqkypMybmrC8o1DxRpta9YLyRN5jRWMI4R9Y0",
+        "expectedJkt": "_V6wZyylaF50KxVvy1NdLOv181nrfczBU49DMTDBS_s",
+        "canonical_member_set": "{crv,kty,x}",
+        "applies_to": [
+          "js"
+        ],
+        "rfc_section": "RFC 7638 §3.2 (OKP — @rakomi/node EdDSA-optional path only; the three native ports are EC/ES256-only)"
+      }
+    ]
+  }
+}
