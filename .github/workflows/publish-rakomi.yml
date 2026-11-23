@@ -1,0 +1,195 @@
+name: Publish rakomi to pub.dev (OIDC)
+
+# The second package of this repository: pub.dev `rakomi` (pure-Dart OpenID Connect discovery), kept under
+# .github/packages/rakomi. Runs on a rakomi-v<version> tag, which release-tag.yml creates next to the
+# rakomi_flutter release tag on the same reviewed head (the tag pattern pub.dev automated publishing of
+# `rakomi` is configured with). It proves the tag commit is the reviewed head of a merged pull request,
+# checks its commit identity and scans its tree for secrets, analyzes and tests the package, checks that the
+# pub.dev publish set is exactly the committed package directory, then packs that set from the git objects
+# of the tag commit and uploads it with a GitHub Actions OIDC token (no stored pub.dev credential) from a job
+# that runs no Dart tooling and receives no file from another job, and reads the version back. A version
+# pub.dev already serves (the first upload of a package is a human act) is not uploaded again.
+
+on:
+  push:
+    tags:
+      - "rakomi-v[0-9]+.[0-9]+.[0-9]+"
+      - "rakomi-v[0-9]+.[0-9]+.[0-9]+-*"
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reviewed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Assert the repository is public on a durable sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_REPO: rakomidev/rakomi-flutter
+        run: |
+          set -euo pipefail
+          VIS="$(gh repo view "${EXPECTED_REPO}" --json visibility --jq '.visibility')"
+          if [ "${VIS}" != "PUBLIC" ]; then
+            echo "ERROR: repository visibility is '${VIS}', not PUBLIC"
+            exit 1
+          fi
+          if [ "${#GITHUB_SHA}" -ne 40 ]; then
+            echo "ERROR: no durable 40-hex commit sha for this release"
+            exit 1
+          fi
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Assert the tag commit is the reviewed head merged into the default branch
+        env:
+          TAG_REF: ${{ github.ref }}
+          TAG_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node .github/scripts/check-release-tag-reviewed.mjs
+
+      - name: Assert the tag names the version of the package at the tag commit
+        id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#rakomi-v}"
+          DECLARED="$(git show "${GITHUB_SHA}:.github/packages/rakomi/pubspec.yaml" \
+            | node --input-type=module -e "import { pubspecVersion } from './.github/scripts/companion-tag-plan.mjs'; let s = ''; for await (const c of process.stdin) s += c; process.stdout.write(pubspecVersion(s) ?? '')")"
+          if [ -z "${DECLARED}" ] || [ "${DECLARED}" != "${VERSION}" ]; then
+            echo "ERROR: tag ${TAG_NAME} does not name the version the package declares (${DECLARED:-none})"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Commit identity of the tag commit (release role mailbox only)
+        run: node .github/scripts/check-build-identity.mjs --ref "${GITHUB_SHA}"
+
+      # The sha256 is the release's own published checksum, pinned here (not read from the release at run
+      # time): https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt
+      - name: Install gitleaks (pinned version and release checksum)
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          TGZ="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "${TGZ}" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${TGZ}"
+          echo "${GITLEAKS_SHA256}  ${TGZ}" | sha256sum -c -
+          tar -xzf "${TGZ}" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Secret scan of the tag commit tree (gitleaks, default rules, no suppressions, fails closed)
+        run: node .github/scripts/secret-scan-tree.mjs --ref "${GITHUB_SHA}"
+
+  verify:
+    needs: reviewed
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .github/packages/rakomi
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: "3.41.7"
+          cache: false
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: dart analyze --fatal-infos --fatal-warnings
+
+      - name: Test
+        run: dart test
+
+      - name: The pub.dev publish set is exactly the committed package directory
+        working-directory: ${{ github.workspace }}
+        env:
+          PUB_PACKAGE_DIR: .github/packages/rakomi
+        run: node .github/scripts/pub-publish.mjs check-set
+
+  publish:
+    needs: [reviewed, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PUB_PACKAGE_DIR: .github/packages/rakomi
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Does pub.dev already serve this version?
+        id: served
+        env:
+          VERSION: ${{ needs.reviewed.outputs.version }}
+        run: |
+          set -euo pipefail
+          SERVED="$(node .github/scripts/pub-publish.mjs published rakomi "${VERSION}")"
+          echo "served=${SERVED}" >> "${GITHUB_OUTPUT}"
+          if [ "${SERVED}" = "true" ]; then echo "pub.dev already serves rakomi ${VERSION}; nothing to upload"; fi
+
+      - name: Pack the publish set from the git objects of the tag commit
+        if: steps.served.outputs.served == 'false'
+        run: node .github/scripts/pub-publish.mjs pack "${RUNNER_TEMP}/package.tar.gz"
+
+      - name: The archive is exactly the package files of the tag commit
+        if: steps.served.outputs.served == 'false'
+        run: node .github/scripts/pub-publish.mjs verify-archive "${RUNNER_TEMP}/package.tar.gz"
+
+      - name: Publish to pub.dev (OIDC id-token, audience https://pub.dev)
+        if: steps.served.outputs.served == 'false'
+        run: node .github/scripts/pub-publish.mjs upload "${RUNNER_TEMP}/package.tar.gz"
+
+      - name: Read the version back from pub.dev
+        env:
+          VERSION: ${{ needs.reviewed.outputs.version }}
+        run: node .github/scripts/pub-publish.mjs read-back rakomi "${VERSION}"

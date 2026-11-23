@@ -17,10 +17,18 @@
 //                           GITHUB_ENV or disk. Needs `permissions: id-token: write`.
 //   read-back <pkg> <ver>   poll https://pub.dev/api/packages/<pkg>/versions/<ver> until pub.dev serves
 //                           that version (at most ~10 minutes).
+//   published <pkg> <ver>   print `true` when pub.dev already serves that version, `false` when it answers 404;
+//                           anything else cannot be evaluated. A version a human uploaded first (pub.dev's
+//                           first upload of a package cannot be automated) is then not uploaded again.
 //   fetch-archive <pkg> <ver> <archive>
 //                           download the archive pub.dev serves for that version (its archive_url on
 //                           pub.dev) and refuse it unless its sha256 is the archive_sha256 pub.dev states;
 //                           prints that sha256. The attestation job attests these bytes.
+//
+// PUB_PACKAGE_DIR (environment, default unset = the repository root, rakomi_flutter): the directory of a
+// second package this repository publishes, kept under .github/packages/ (COMPANION_DIR_RE). check-set, pack
+// and verify-archive then work on the files under that directory, package-relative, with the same
+// REPOSITORY_ONLY rules; the root package never includes .github/, so neither package carries the other.
 //
 // Exit: 0 = OK; 1 = refused or failed; 2 = cannot evaluate.
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -78,6 +86,31 @@ export function parsePubTree(out) {
  */
 export const REPOSITORY_ONLY = Object.freeze(['test/', '.pubignore', 'sbom.cdx.json'])
 
+/** A second package of this repository lives in .github/packages/<pub package name>. */
+export const COMPANION_DIR_RE = /^\.github\/packages\/[a-z][a-z0-9_]*$/
+
+/**
+ * The package directory from PUB_PACKAGE_DIR: '' (the repository root) when unset, else a COMPANION_DIR_RE path.
+ * @param {Record<string,string|undefined>} env
+ */
+export function packageDirFromEnv(env = process.env) {
+  const d = env.PUB_PACKAGE_DIR
+  if (d === undefined || d === '') return ''
+  if (!COMPANION_DIR_RE.test(d)) throw new PubError('PUB_PACKAGE_DIR must be .github/packages/<package>', 2)
+  return d
+}
+
+/**
+ * A repository path as a path of the package in `dir`, or null when it is not one of its files. The root
+ * package (`dir` '') owns everything outside .github/; a companion owns what is under its directory.
+ * @param {string} p repo-relative POSIX path
+ * @param {string} dir
+ */
+export function packagePath(p, dir = '') {
+  if (dir === '') return p.startsWith('.github/') ? null : p
+  return p.startsWith(`${dir}/`) ? p.slice(dir.length + 1) : null
+}
+
 /** @param {string} p repo-relative POSIX path */
 export function isRepositoryOnly(p) {
   return REPOSITORY_ONLY.some((e) => (e.endsWith('/') ? p.startsWith(e) : p === e))
@@ -86,11 +119,12 @@ export function isRepositoryOnly(p) {
 /**
  * The publish set must be exactly the committed files outside .github/ and REPOSITORY_ONLY.
  * @param {string[]} published
- * @param {string[]} committed `git ls-tree -r --name-only HEAD`
+ * @param {string[]} committed `git ls-tree -r --name-only HEAD` (repository paths)
+ * @param {string} [dir] the package directory ('' = the repository root)
  * @returns {string[]} violations
  */
-export function publishSetViolations(published, committed) {
-  const want = new Set(committed.filter((p) => p !== '' && !p.startsWith('.github/') && !isRepositoryOnly(p)))
+export function publishSetViolations(published, committed, dir = '') {
+  const want = new Set(committed.map((p) => (p === '' ? null : packagePath(p, dir))).filter((p) => p !== null && !isRepositoryOnly(p)))
   const got = new Set(published)
   const v = []
   for (const p of got) if (!want.has(p)) v.push(`published but not committed: ${p}`)
@@ -130,7 +164,7 @@ const FILE_MODES = Object.freeze({ '100644': 0o644, '100755': 0o755 })
  * @param {string} lsTree NUL-separated `<mode> <type> <oid>\t<path>` records
  * @returns {{ entries: {path:string, mode:number, oid:string}[], violations: string[] }}
  */
-export function packageEntries(lsTree) {
+export function packageEntries(lsTree, dir = '') {
   const entries = []
   const violations = []
   const seen = new Set()
@@ -138,8 +172,9 @@ export function packageEntries(lsTree) {
     if (rec === '') continue
     const m = /^(\d{6}) (\w+) ([0-9a-f]{40,64})\t(.+)$/s.exec(rec)
     if (!m) { violations.push('unparseable git ls-tree record'); continue }
-    const [, mode, type, oid, path] = m
-    if (path.startsWith('.github/') || isRepositoryOnly(path)) continue
+    const [, mode, type, oid, repoPath] = m
+    const path = packagePath(repoPath, dir)
+    if (path === null || isRepositoryOnly(path)) continue
     if (seen.has(path)) { violations.push(`duplicate tree entry: ${path}`); continue }
     seen.add(path)
     if (path.startsWith('/') || path.split('/').some((seg) => seg === '' || seg === '.' || seg === '..') || path.includes('\\')) violations.push(`unsafe path: ${path}`)
@@ -239,8 +274,8 @@ const lsTreeHead = () => gitOut(['ls-tree', '-r', '-z', '--full-tree', 'HEAD'])
 const blobOf = (oid) => execFileSync('git', ['cat-file', 'blob', oid], { maxBuffer: 256 * 1024 * 1024 })
 
 /** Write the package files of HEAD, read from the git objects, as a .tar.gz (paths relative to the package root). */
-export function pack(archive, { lsTree = lsTreeHead(), blob = blobOf, mtime = Number(gitOut(['log', '-1', '--format=%ct', 'HEAD']).trim()) } = {}) {
-  const { entries, violations } = packageEntries(lsTree)
+export function pack(archive, { lsTree = lsTreeHead(), blob = blobOf, mtime = Number(gitOut(['log', '-1', '--format=%ct', 'HEAD']).trim()), dir = '' } = {}) {
+  const { entries, violations } = packageEntries(lsTree, dir)
   if (violations.length) {
     for (const line of violations) console.error(`  - ${line}`)
     throw new PubError('the commit carries package entries pub.dev must not receive', 1)
@@ -255,8 +290,8 @@ export function pack(archive, { lsTree = lsTreeHead(), blob = blobOf, mtime = Nu
  * committed bytes.
  * @returns {string[]} violations
  */
-export function archiveViolations(archive, { lsTree = lsTreeHead(), blob = blobOf, readArchive = (f) => readFileSync(f) } = {}) {
-  const want = packageEntries(lsTree)
+export function archiveViolations(archive, { lsTree = lsTreeHead(), blob = blobOf, readArchive = (f) => readFileSync(f), dir = '' } = {}) {
+  const want = packageEntries(lsTree, dir)
   const got = readTarGz(readArchive(archive))
   const v = [...want.violations, ...got.violations]
   const byPath = new Map(want.entries.map((e) => [e.path, e]))
@@ -301,6 +336,19 @@ export async function upload(archive, { env = process.env, fetchFn = fetch, writ
   return done?.success?.message ?? 'uploaded'
 }
 
+/** Whether pub.dev serves `version` of `pkg`: true on 200 for exactly that package and version, false on 404. */
+export async function isPublished(pkg, version, { fetchFn = fetch } = {}) {
+  if (!/^[a-z][a-z0-9_]*$/.test(pkg || '') || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version || '')) throw new PubError('published needs a package name and a version', 2)
+  let res
+  try { res = await fetchFn(`${PUB_DEV}/api/packages/${pkg}/versions/${version}`, { headers: { Accept: 'application/json' }, redirect: 'error' }) } catch { throw new PubError('the version request failed', 2) }
+  if (res.status === 404) return false
+  if (!res.ok) throw new PubError(`pub.dev answered HTTP ${res.status}`, 2)
+  let body
+  try { body = await res.json() } catch { throw new PubError('pub.dev did not answer JSON', 2) }
+  if (body?.version !== version || body?.pubspec?.name !== pkg) throw new PubError('pub.dev answered for another package or version', 2)
+  return true
+}
+
 /** Poll pub.dev until it serves `version` of `pkg`. */
 export async function readBack(pkg, version, { fetchFn = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tries = 30, delayMs = 20000 } = {}) {
   if (!/^[a-z][a-z0-9_]*$/.test(pkg || '') || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version || '')) throw new PubError('read-back needs a package name and a version', 2)
@@ -343,12 +391,12 @@ export async function fetchArchive(pkg, version, archive, { fetchFn = fetch, wri
   return got
 }
 
-function checkSet() {
-  const r = spawnSync('dart', ['pub', 'publish', '--dry-run'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+function checkSet(dir) {
+  const r = spawnSync('dart', ['pub', 'publish', '--dry-run'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...(dir ? { cwd: dir } : {}) })
   if (r.error) throw new PubError('dart is not on PATH', 2)
   const published = parsePubTree(`${r.stdout}\n${r.stderr}`)
   const committed = execFileSync('git', ['ls-tree', '-r', '--name-only', '--full-tree', 'HEAD'], { encoding: 'utf8' }).split('\n')
-  const v = publishSetViolations(published, committed)
+  const v = publishSetViolations(published, committed, dir)
   if (v.length) {
     for (const line of v) console.error(`  - ${line}`)
     throw new PubError('the publish set differs from the committed tree', 1)
@@ -360,17 +408,19 @@ function checkSet() {
 async function main() {
   const [mode, ...rest] = process.argv.slice(2)
   try {
-    if (mode === 'check-set') checkSet()
-    else if (mode === 'pack' && rest[0]) console.error(`pub-publish: packed ${pack(rest[0])} files`)
+    const dir = packageDirFromEnv()
+    if (mode === 'check-set') checkSet(dir)
+    else if (mode === 'pack' && rest[0]) console.error(`pub-publish: packed ${pack(rest[0], { dir })} files`)
     else if (mode === 'verify-archive' && rest[0]) {
-      const v = archiveViolations(rest[0])
+      const v = archiveViolations(rest[0], { dir })
       for (const line of v) console.error(`  - ${line}`)
       if (v.length) throw new PubError('the archive is not the package files of this commit', 1)
       console.error('pub-publish: archive = package files of this commit')
     } else if (mode === 'upload' && rest[0]) console.error(`pub-publish: ${await upload(rest[0])}`)
+    else if (mode === 'published' && rest[1]) process.stdout.write(`${await isPublished(rest[0], rest[1])}\n`)
     else if (mode === 'fetch-archive' && rest[2]) process.stdout.write(`${await fetchArchive(rest[0], rest[1], rest[2])}\n`)
     else if (mode === 'read-back') console.error(`pub-publish: pub.dev serves ${rest[0]} ${rest[1]} (archive sha256 ${await readBack(rest[0], rest[1])})`)
-    else throw new PubError('usage: pub-publish.mjs check-set | pack <archive> | verify-archive <archive> | upload <archive> | read-back <package> <version> | fetch-archive <package> <version> <archive>', 2)
+    else throw new PubError('usage: pub-publish.mjs check-set | pack <archive> | verify-archive <archive> | upload <archive> | read-back <package> <version> | published <package> <version> | fetch-archive <package> <version> <archive>', 2)
   } catch (e) {
     console.error(`pub-publish: ${e.message}`)
     process.exitCode = e instanceof PubError ? e.exitCode : 1
