@@ -1,0 +1,25 @@
+name: rakomi
+description: >-
+  OpenID Connect discovery for a Rakomi issuer in pure Dart: fetches the
+  provider metadata and its JSON Web Key Set over HTTPS and checks that the
+  metadata names the issuer it was fetched from. For Flutter apps use
+  rakomi_flutter.
+version: 0.1.0
+homepage: https://rakomi.com
+repository: https://github.com/rakomidev/rakomi-flutter/tree/main/.github/packages/rakomi
+issue_tracker: https://github.com/rakomidev/rakomi-flutter/issues
+documentation: https://docs.rakomi.dev/sdks/flutter
+
+topics:
+  - oauth
+  - openid
+  - authentication
+
+environment:
+  sdk: '>=3.11.0 <4.0.0'
+
+dependencies:
+  http: ^1.6.0
+
+dev_dependencies:
+  test: ^1.26.0

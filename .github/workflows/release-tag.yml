@@ -212,6 +212,14 @@ jobs:
           SOURCE_TREE: ${{ needs.verify.outputs.source_tree }}
         run: node .github/scripts/release-tag-plan.mjs
 
+      # The second package of this repository (pub.dev `rakomi`, .github/packages/rakomi) is tagged
+      # rakomi-v<version> on the same reviewed head when that version has no tag yet (publish-rakomi.yml).
+      - name: Plan the companion package tags on the verified head
+        id: companion
+        env:
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: node .github/scripts/companion-tag-plan.mjs
+
       - name: Mint the release-tag token
         id: tag-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
@@ -227,6 +235,7 @@ jobs:
           TAG_TOKEN: ${{ steps.tag-token.outputs.token }}
           TAGS: ${{ steps.plan.outputs.tags }}
           ALL_TAGS: ${{ steps.plan.outputs.all_tags }}
+          COMPANION_TAGS: ${{ steps.companion.outputs.companion_tags }}
           SOURCE_TREE: ${{ needs.verify.outputs.source_tree }}
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
@@ -236,7 +245,7 @@ jobs:
           echo "::add-mask::${AUTH_B64}"
           git config user.name "Rakomi Release Bot"
           git config user.email "release-bot@rakomi.com"
-          for TAG in ${TAGS}; do
+          for TAG in ${TAGS} ${COMPANION_TAGS}; do
             MESSAGE="$(printf '%s\n\nRelease-PR: #%s\nSource-Tree: %s\nRelease-Tags: %s\n' "${TAG}" "${PR_NUMBER}" "${SOURCE_TREE}" "${ALL_TAGS}")"
             git tag -a "${TAG}" -m "${MESSAGE}" "${HEAD_SHA}"
             git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${AUTH_B64}" push origin "refs/tags/${TAG}"
